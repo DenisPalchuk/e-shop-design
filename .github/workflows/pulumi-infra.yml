@@ -29,7 +29,7 @@ env:
   ATLAS_CLUSTER_NAME: ${{ vars.ATLAS_CLUSTER_NAME || 'checkout-free' }}
   ATLAS_DATABASE_NAME: ${{ vars.ATLAS_DATABASE_NAME || 'ecommerce' }}
   ATLAS_DB_USERNAME: ${{ vars.ATLAS_DB_USERNAME || 'checkoutapp' }}
-  ATLAS_REGION: ${{ vars.ATLAS_REGION || 'US_EAST_1' }}
+  ATLAS_REGION: ${{ vars.ATLAS_REGION || 'EU_CENTRAL_1' }}
   ATLAS_ACCESS_LIST_CIDR: ${{ vars.ATLAS_ACCESS_LIST_CIDR || '0.0.0.0/0' }}
   RESOURCE_NAME_PREFIX: ${{ vars.RESOURCE_NAME_PREFIX || 'checkout-dev' }}
   EVENTBRIDGE_BUS_NAME: ${{ vars.EVENTBRIDGE_BUS_NAME || 'checkout-events' }}
