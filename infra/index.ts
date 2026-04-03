@@ -30,7 +30,6 @@ function getSecretConfigOrEnv(name: string, envName: string): pulumi.Input<strin
   return pulumi.secret(envValue);
 }
 
-const awsRegion = config.get("awsRegion") ?? process.env.AWS_REGION ?? aws.config.region ?? "us-east-1";
 const atlasOrgId = getConfigOrEnv("atlasOrgId", "ATLAS_ORG_ID");
 const atlasProjectName = getConfigOrEnv("atlasProjectName", "ATLAS_PROJECT_NAME", `e-shop-checkout-${stack}`);
 const atlasClusterName = getConfigOrEnv("atlasClusterName", "ATLAS_CLUSTER_NAME", "checkout-free");
@@ -161,7 +160,6 @@ const eventBus = new aws.cloudwatch.EventBus("checkout-event-bus", {
 });
 
 const lambdaEnvironment = {
-  AWS_REGION: awsRegion,
   EVENTBRIDGE_BUS_NAME: eventBus.name,
   MONGODB_URI: mongoUri,
   NODE_OPTIONS: "--enable-source-maps",
