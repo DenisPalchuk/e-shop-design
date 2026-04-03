@@ -38,7 +38,8 @@ s3://my-pulumi-state-bucket/checkout?region=eu-central-1
 ```
 
 Set that URL in the GitHub secret `PULUMI_BACKEND_URL`.
-s3://e-shop-pulumi-839701728923-eu-central-1-an/pulumi/
+
+If a workflow log says `Logging into the Pulumi Cloud backend`, then `PULUMI_BACKEND_URL` was empty or not applied. The workflow now fails early if that secret is missing and logs in explicitly with `pulumi login "$PULUMI_BACKEND_URL"`.
 ## Required GitHub Secrets
 
 - `AWS_ACCESS_KEY_ID`

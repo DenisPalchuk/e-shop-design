@@ -68,25 +68,33 @@ jobs:
         run: npm run build:lambdas
         working-directory: infra
 
-      - name: Pulumi preview
+      - name: Install Pulumi CLI
         uses: pulumi/actions@v6
-        with:
-          command: preview
-          stack-name: ${{ env.PULUMI_STACK }}
-          cloud-url: ${{ env.PULUMI_BACKEND_URL }}
-          work-dir: infra
-          comment-on-pr: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Pulumi S3 backend URL
+        run: test -n "$PULUMI_BACKEND_URL"
+
+      - name: Login to Pulumi S3 backend
+        run: pulumi login "$PULUMI_BACKEND_URL"
+        working-directory: infra
+
+      - name: Select or create stack
+        run: pulumi stack select "$PULUMI_STACK" --create --non-interactive
+        working-directory: infra
         env:
-          AWS_REGION: ${{ env.AWS_REGION }}
-          PULUMI_CONFIG_PASSPHRASE: ${{ env.PULUMI_CONFIG_PASSPHRASE }}
-          ATLAS_ORG_ID: ${{ env.ATLAS_ORG_ID }}
-          ATLAS_PROJECT_NAME: ${{ env.ATLAS_PROJECT_NAME }}
-          ATLAS_CLUSTER_NAME: ${{ env.ATLAS_CLUSTER_NAME }}
-          ATLAS_DATABASE_NAME: ${{ env.ATLAS_DATABASE_NAME }}
-          ATLAS_DB_USERNAME: ${{ env.ATLAS_DB_USERNAME }}
-          ATLAS_REGION: ${{ env.ATLAS_REGION }}
-          ATLAS_ACCESS_LIST_CIDR: ${{ env.ATLAS_ACCESS_LIST_CIDR }}
+          PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+
+      - name: Pulumi preview
+        run: pulumi preview --stack "$PULUMI_STACK" --non-interactive
+        working-directory: infra
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+          PULUMI_BACKEND_URL: ${{ vars.PULUMI_BACKEND_URL }}
+          ATLAS_ORG_ID: ${{ vars.ATLAS_ORG_ID }}
+          ATLAS_PROJECT_NAME: ${{ vars.ATLAS_PROJECT_NAME }}
+          ATLAS_CLUSTER_NAME: ${{ vars.ATLAS_CLUSTER_NAME }}
+          ATLAS_REGION: ${{ vars.ATLAS_REGION }}
           EVENTBRIDGE_BUS_NAME: ${{ env.EVENTBRIDGE_BUS_NAME }}
           RESOURCE_NAME_PREFIX: ${{ env.RESOURCE_NAME_PREFIX }}
           MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_KEY }}
@@ -111,7 +119,7 @@ jobs:
         with:
           aws-access-key-id: ${{ vars.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Install source dependencies
         run: npm ci
@@ -125,16 +133,29 @@ jobs:
         run: npm run build:lambdas
         working-directory: infra
 
-      - name: Pulumi up
+      - name: Install Pulumi CLI
         uses: pulumi/actions@v6
-        with:
-          command: up
-          stack-name: ${{ env.PULUMI_STACK }}
-          cloud-url: ${{ env.PULUMI_BACKEND_URL }}
-          work-dir: infra
+
+      - name: Verify Pulumi S3 backend URL
+        run: test -n "$PULUMI_BACKEND_URL"
+
+      - name: Login to Pulumi S3 backend
+        run: pulumi login "$PULUMI_BACKEND_URL"
+        working-directory: infra
+
+      - name: Select or create stack
+        run: pulumi stack select "$PULUMI_STACK" --create --non-interactive
+        working-directory: infra
+        env:
+          PULUMI_CONFIG_PASSPHRASE: ${{ env.PULUMI_CONFIG_PASSPHRASE }}
+
+      - name: Pulumi up
+        run: pulumi up --stack "$PULUMI_STACK" --yes --non-interactive
+        working-directory: infra
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
           PULUMI_CONFIG_PASSPHRASE: ${{ env.PULUMI_CONFIG_PASSPHRASE }}
+          PULUMI_BACKEND_URL: ${{ env.PULUMI_BACKEND_URL }}
           ATLAS_ORG_ID: ${{ env.ATLAS_ORG_ID }}
           ATLAS_PROJECT_NAME: ${{ env.ATLAS_PROJECT_NAME }}
           ATLAS_CLUSTER_NAME: ${{ env.ATLAS_CLUSTER_NAME }}
@@ -144,5 +165,5 @@ jobs:
           ATLAS_ACCESS_LIST_CIDR: ${{ env.ATLAS_ACCESS_LIST_CIDR }}
           EVENTBRIDGE_BUS_NAME: ${{ env.EVENTBRIDGE_BUS_NAME }}
           RESOURCE_NAME_PREFIX: ${{ env.RESOURCE_NAME_PREFIX }}
-          MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_KEY }}
+          MONGODB_ATLAS_PUBLIC_KEY: ${{ vars.MONGODB_ATLAS_PUBLIC_KEY }}
           MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets.MONGODB_ATLAS_PRIVATE_KEY }}
