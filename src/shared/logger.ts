@@ -20,8 +20,13 @@ function redact(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const redacted: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      // Mask payment tokens and any field named "token" or "paymentToken"
-      if (k === "token" || k === "paymentToken") {
+      // Mask payment credentials and provider references in structured logs.
+      if (
+        k === "token" ||
+        k === "paymentToken" ||
+        k === "authorizationRef" ||
+        k === "paymentAuthorizationRef"
+      ) {
         redacted[k] = typeof v === "string" ? `${v.slice(0, 4)}****` : "[REDACTED]";
       } else {
         redacted[k] = redact(v);

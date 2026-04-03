@@ -151,7 +151,7 @@ All domain events flow through a single custom EventBridge bus: `checkout-events
 
 | Event Name | Source | Payload Key Fields | Consumers |
 |---|---|---|---|
-| `order.created` | Order Service | orderId, items[], customer, shippingMethod, paymentDetails | Inventory Service, Notification Service |
+| `order.created` | Order Service | orderId, items[], customer, shippingMethod, paymentAuthorization | Inventory Service, Notification Service |
 | `inventory.confirmed` | Inventory Service | orderId, reservationId | Pricing Service, Order Service |
 | `inventory.failed` | Inventory Service | orderId, unavailableItems[] | Order Service, Notification Service |
 | `order.priced` | Pricing Service | orderId, lineItems[], shippingCost, grandTotal | Invoice Service, Order Service |
@@ -314,6 +314,9 @@ Error codes: `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `IDEMPOTENCY_CONFLICT`
 
 **Response — 200 OK (Idempotent duplicate):**
 Returns the same response as the original 201, indicating debounce caught a duplicate.
+
+**Response — 409 Conflict (Duplicate still processing):**
+Returned only when the same idempotency key is already claimed by an in-flight request and the bounded replay wait times out before the original request completes. Clients should retry with the same idempotency key to fetch the eventual cached response.
 
 **Response — 400 Bad Request:**
 ```json
@@ -540,7 +543,7 @@ Returns the same response as the original 201, indicating debounce caught a dupl
   ],
   "shippingMethod": "standard",
   "paymentProvider": "stripe",
-  "paymentToken": "tok_...",
+  "paymentAuthorizationRef": "auth_stripe_...",
   "grandTotalCents": 11596,
   "invoiceId": "inv_abc123",
   "statusHistory": [
@@ -548,8 +551,7 @@ Returns the same response as the original 201, indicating debounce caught a dupl
     { "status": "inventory_confirmed", "timestamp": "2026-03-29T10:00:02Z" }
   ],
   "createdAt": "2026-03-29T10:00:00Z",
-  "updatedAt": "2026-03-31T10:00:00Z",
-  "paymentTokenExpiresAt": "2026-03-29T10:30:00Z"
+  "updatedAt": "2026-03-31T10:00:00Z"
 }
 ```
 
@@ -696,15 +698,24 @@ Returns the same response as the original 201, indicating debounce caught a dupl
 interface PaymentProvider {
   readonly name: string;
 
-  charge(request: ChargeRequest): Promise<ChargeResult>;
+  authorize(request: AuthorizationRequest): Promise<AuthorizationResult>;
+  capture(request: CaptureRequest): Promise<ChargeResult>;
 }
 
-interface ChargeRequest {
-  orderId: string;
+interface AuthorizationRequest {
+  token: string;               // Provider-specific payment token
+  idempotencyKey: string;      // Prevents duplicate authorizations
+}
+
+interface AuthorizationResult {
+  authorizationRef: string;    // Provider-side reference stored by our system
+}
+
+interface CaptureRequest {
   amountCents: number;
   currency: string;
-  token: string;              // Provider-specific payment token
-  idempotencyKey: string;     // Prevents double charges
+  authorizationRef: string;    // Provider-side payment authorization reference
+  idempotencyKey: string;      // Prevents double charges
   metadata: Record<string, string>;
 }
 
@@ -721,12 +732,14 @@ interface ChargeResult {
 ```typescript
 class StripePaymentProvider implements PaymentProvider {
   readonly name = 'stripe';
-  async charge(request: ChargeRequest): Promise<ChargeResult> { /* ... */ }
+  async authorize(request: AuthorizationRequest): Promise<AuthorizationResult> { /* ... */ }
+  async capture(request: CaptureRequest): Promise<ChargeResult> { /* ... */ }
 }
 
 class PayPalPaymentProvider implements PaymentProvider {
   readonly name = 'paypal';
-  async charge(request: ChargeRequest): Promise<ChargeResult> { /* ... */ }
+  async authorize(request: AuthorizationRequest): Promise<AuthorizationResult> { /* ... */ }
+  async capture(request: CaptureRequest): Promise<ChargeResult> { /* ... */ }
 }
 ```
 
@@ -858,22 +871,35 @@ class SMSChannel implements NotificationChannel {
 Client Request (with X-Idempotency-Key)
     │
     ▼
-┌───────────────────────────────┐
-│ Query order_idempotency       │
-│ collection by _id (idem. key) │
-└───────────┬───────────────────┘
-            │
-    ┌───────┴───────┐
-    │ Key exists?   │
-    ├── YES ────────┼──► Return cached response (200 OK)
-    │               │
-    └── NO ─────────┼──► Process order, insert with expiresAt
-                    │    Return new response (201 Created)
-                    ▼
+┌────────────────────────────────────┐
+│ Try insert pending idempotency row │
+│ (_id = key, status = pending)      │
+└──────────────┬─────────────────────┘
+               │
+      ┌────────┴────────┐
+      │ Insert won?     │
+      ├── YES ──────────┼──► Create order + complete idempotency record
+      │                 │    Commit both in one transaction
+      │                 │    Publish order.created after commit
+      │                 │    Return 201 Created
+      │
+      └── NO ───────────┼──► Read existing record
+                        │
+          ┌─────────────┼─────────────┐
+          │ completed   │ pending     │ stale pending
+          │             │             │
+          ▼             ▼             ▼
+  Return cached 200   Wait briefly    Conditional takeover
+                      for completion   then continue as winner
+                      │
+                      ├── completed ─► Return cached 200
+                      └── timeout   ─► Return 409 Conflict
 ```
 
 - Idempotency records auto-expire via MongoDB TTL index (5 min default, configurable)
-- `insertOne` with unique `_id` prevents race conditions (duplicate key error = already processing)
+- The first request claims the key before any order insert, so concurrent duplicates cannot create a second order
+- Pending claims carry a short processing lease; if the owner crashes, a later request can take over once the lease expires
+- Duplicate requests wait briefly for the winning request to finish so normal rapid double-submits replay the original response instead of failing
 
 ### 7.2 Payment Failure Flow
 
@@ -881,7 +907,7 @@ Client Request (with X-Idempotency-Key)
 Payment Service receives invoice.generated event
     │
     ▼
-Call PaymentProvider.charge() with orderId as idempotency key
+Call PaymentProvider.capture() with authorizationRef and orderId as idempotency key
     │
     ├── Success ──► Emit payment.succeeded
     │

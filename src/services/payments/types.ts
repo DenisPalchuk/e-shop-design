@@ -11,7 +11,7 @@ export interface PaymentDocument {
   provider: PaymentProvider;
   status: PaymentStatus;
   amountCents: number;
-  paymentToken: string;
+  authorizationRef: string;
   transactionRef: string | null;
   idempotencyKey: string;
   failureReason: string | null;
@@ -28,7 +28,10 @@ export interface OrderCreatedEventDetail {
   metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
   data: {
     orderId: string;
-    paymentDetails: { provider: PaymentProvider; token: string };
+    paymentAuthorization: {
+      provider: PaymentProvider;
+      authorizationRef: string;
+    };
   };
 }
 

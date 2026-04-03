@@ -6,8 +6,9 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
+    "build:test": "node -e \"require('node:fs').rmSync('.test-dist', { recursive: true, force: true })\" && tsc -p tsconfig.test.json",
     "lint": "eslint 'order-service/**/*.ts' 'shared/**/*.ts'",
-    "test": "jest"
+    "test": "npm run build && npm run build:test && node --test .test-dist/test/**/*.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-eventbridge": "^3.1023.0",
@@ -19,7 +20,7 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.161",
-    "@types/node": "^20.19.39",
+    "@types/node": "^25.5.0",
     "typescript": "^5.4.5"
   },
   "engines": {

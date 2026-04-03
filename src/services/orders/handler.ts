@@ -1,6 +1,12 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2, SQSEvent, SQSRecord } from "aws-lambda";
+import {
+  APIGatewayProxyEventV2,
+  APIGatewayProxyResultV2,
+  SQSEvent,
+  SQSRecord,
+} from "aws-lambda";
+import { ClientSession } from "mongodb";
 import { validateCreateOrder } from "./validation";
-import { init } from "./context";
+import { init, OrdersContext } from "./context";
 import {
   OrderDocument,
   CreateOrderResponse,
@@ -9,9 +15,10 @@ import {
   ShipmentDeliveredEventDetail,
   ShipmentSummary,
 } from "./types";
-import { AppError, internalError } from "../../shared/errors";
-import { createLogger } from "../../shared/logger";
+import { AppError, conflictError, internalError } from "../../shared/errors";
+import { createLogger, Logger } from "../../shared/logger";
 import { generateOrderId, generateRequestId } from "../../shared/ids";
+import { runInTransaction } from "../../shared/db";
 import {
   errorResponse,
   getPathParam,
@@ -23,15 +30,108 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
+type OrdersInitializer = (logger: Logger) => Promise<OrdersContext>;
+type TransactionRunner = <T>(
+  work: (session: ClientSession) => Promise<T>,
+) => Promise<T>;
+
+interface CreateOrderDependencies {
+  initOrders?: OrdersInitializer;
+  transactionRunner?: TransactionRunner;
+  orderIdFactory?: () => string;
+  nowFactory?: () => Date;
+  loggerFactory?: typeof createLogger;
+}
+
+async function claimIdempotencyKey(
+  idempotencyKey: string,
+  requestId: string,
+  idempotencyRepository: OrdersContext["idempotencyRepository"],
+  logger: Logger,
+): Promise<
+  | { kind: "claimed" }
+  | { kind: "completed"; response: CreateOrderResponse; orderId: string }
+> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const claim = await idempotencyRepository.claimOrGet(idempotencyKey, requestId);
+
+    if (claim.kind === "claimed" || claim.kind === "completed") {
+      return claim;
+    }
+
+    if (claim.kind === "stale_pending") {
+      const takenOver = await idempotencyRepository.takeOverIfStale(
+        idempotencyKey,
+        requestId,
+      );
+      if (takenOver) {
+        logger.info("Took over stale idempotency claim", {
+          idempotencyKey,
+          requestId,
+        });
+        return { kind: "claimed" };
+      }
+
+      continue;
+    }
+
+    logger.info("Waiting for in-flight idempotent order creation", {
+      idempotencyKey,
+      requestId,
+      attempt,
+    });
+
+    const waited = await idempotencyRepository.waitForCompletion(idempotencyKey);
+
+    if (waited.kind === "completed") {
+      return waited;
+    }
+
+    if (waited.kind === "missing") {
+      continue;
+    }
+
+    if (waited.kind === "stale_pending") {
+      const takenOver = await idempotencyRepository.takeOverIfStale(
+        idempotencyKey,
+        requestId,
+      );
+      if (takenOver) {
+        logger.info("Took over stale idempotency claim after waiting", {
+          idempotencyKey,
+          requestId,
+        });
+        return { kind: "claimed" };
+      }
+
+      continue;
+    }
+
+    throw conflictError(
+      "An order with this idempotency key is already being processed",
+    );
+  }
+
+  throw conflictError(
+    "Unable to acquire the idempotency key after repeated contention",
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Route handlers
 // ---------------------------------------------------------------------------
 
-async function handleCreateOrder(
+export async function handleCreateOrder(
   event: APIGatewayProxyEventV2,
   requestId: string,
+  dependencies: CreateOrderDependencies = {},
 ): Promise<APIGatewayProxyResultV2> {
-  const logger = createLogger(undefined, requestId);
+  const loggerFactory = dependencies.loggerFactory ?? createLogger;
+  const logger = loggerFactory(undefined, requestId);
+  const initOrders = dependencies.initOrders ?? init;
+  const transactionRunner = dependencies.transactionRunner ?? runInTransaction;
+  const orderIdFactory = dependencies.orderIdFactory ?? generateOrderId;
+  const nowFactory = dependencies.nowFactory ?? (() => new Date());
 
   // Parse body
   let rawBody: unknown;
@@ -62,22 +162,30 @@ async function handleCreateOrder(
     customerEmail: input.customer.email,
   });
 
-  const { ordersRepository, idempotencyRepository, ordersEvents } =
-    await init(childLogger);
+  const { ordersRepository, idempotencyRepository, ordersEvents, paymentProvider } =
+    await initOrders(childLogger);
 
-  // --- Idempotency check ---
-  const cached = await idempotencyRepository.check(idempotencyKey);
-  if (cached) {
+  const claim = await claimIdempotencyKey(
+    idempotencyKey,
+    requestId,
+    idempotencyRepository,
+    childLogger,
+  );
+
+  if (claim.kind === "completed") {
     childLogger.info("Returning cached idempotent response", {
-      orderId: cached.orderId,
+      orderId: claim.orderId,
     });
-    return jsonResponse(200, cached);
+    return jsonResponse(200, claim.response);
   }
 
   // --- Create order ---
-  const orderId = generateOrderId();
-  const now = new Date();
-  const paymentTokenExpiresAt = new Date(now.getTime() + 30 * 60 * 1000);
+  const orderId = orderIdFactory();
+  const now = nowFactory();
+  const authorization = await paymentProvider.authorize({
+    token: input.payment.token,
+    idempotencyKey: `${idempotencyKey}_authorize`,
+  });
 
   const order: OrderDocument = {
     _id: orderId,
@@ -91,18 +199,14 @@ async function handleCreateOrder(
     items: input.items,
     shippingMethod: input.shippingMethod,
     paymentProvider: input.payment.provider,
-    paymentToken: input.payment.token,
+    paymentAuthorizationRef: authorization.authorizationRef,
     grandTotalCents: null,
     invoiceId: null,
     shipments: [],
     statusHistory: [{ status: "pending", timestamp: now.toISOString() }],
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
-    paymentTokenExpiresAt: paymentTokenExpiresAt.toISOString(),
   };
-
-  await ordersRepository.insert(order);
-  await ordersEvents.publishOrderCreated(order);
 
   // --- Build response ---
   const response: CreateOrderResponse = {
@@ -114,8 +218,35 @@ async function handleCreateOrder(
     createdAt: order.createdAt,
   };
 
-  // --- Store idempotency record ---
-  await idempotencyRepository.store(idempotencyKey, orderId, response);
+  try {
+    await transactionRunner(async (session) => {
+      await ordersRepository.insert(order, session);
+      await idempotencyRepository.complete(
+        idempotencyKey,
+        requestId,
+        orderId,
+        response,
+        session,
+      );
+    });
+  } catch (error) {
+    try {
+      await idempotencyRepository.releasePending(idempotencyKey, requestId);
+    } catch (releaseError) {
+      childLogger.error("Failed to release pending idempotency record", {
+        idempotencyKey,
+        requestId,
+        error:
+          releaseError instanceof Error
+            ? releaseError.message
+            : String(releaseError),
+      });
+    }
+
+    throw error;
+  }
+
+  await ordersEvents.publishOrderCreated(order);
 
   childLogger.info("Order created successfully", { orderId });
   return jsonResponse(201, response);

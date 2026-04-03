@@ -30,9 +30,9 @@ export class OrderEvents {
           shippingAddress: order.customer.shippingAddress,
         },
         shippingMethod: order.shippingMethod,
-        paymentDetails: {
+        paymentAuthorization: {
           provider: order.paymentProvider,
-          token: order.paymentToken,
+          authorizationRef: order.paymentAuthorizationRef,
         },
       },
     };

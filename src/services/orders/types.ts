@@ -54,27 +54,43 @@ export interface OrderDocument {
   items: OrderItem[];
   shippingMethod: ShippingMethod;
   paymentProvider: PaymentProvider;
-  paymentToken: string;
+  paymentAuthorizationRef: string;
   grandTotalCents: number | null;
   invoiceId: string | null;
   shipments: ShipmentSummary[];
   statusHistory: StatusHistoryEntry[];
   createdAt: string; // ISO-8601
   updatedAt: string; // ISO-8601
-  paymentTokenExpiresAt: string; // ISO-8601 (createdAt + 30 min)
 }
 
 // ---------------------------------------------------------------------------
 // Domain: Idempotency record (as stored in MongoDB)
 // ---------------------------------------------------------------------------
 
-export interface IdempotencyDocument {
+export type IdempotencyStatus = "pending" | "completed";
+
+interface BaseIdempotencyDocument {
   _id: string; // the idempotency key itself
-  orderId: string;
-  response: CreateOrderResponse;
+  status: IdempotencyStatus;
+  requestId: string;
   createdAt: string;
+  leaseExpiresAt: string;
   expiresAt: string;
 }
+
+export interface PendingIdempotencyDocument extends BaseIdempotencyDocument {
+  status: "pending";
+}
+
+export interface CompletedIdempotencyDocument extends BaseIdempotencyDocument {
+  status: "completed";
+  orderId: string;
+  response: CreateOrderResponse;
+}
+
+export type IdempotencyDocument =
+  | PendingIdempotencyDocument
+  | CompletedIdempotencyDocument;
 
 // ---------------------------------------------------------------------------
 // API request/response shapes
@@ -169,9 +185,9 @@ export interface OrderCreatedEventDetail {
       shippingAddress: Address;
     };
     shippingMethod: ShippingMethod;
-    paymentDetails: {
+    paymentAuthorization: {
       provider: PaymentProvider;
-      token: string;
+      authorizationRef: string;
     };
   };
 }

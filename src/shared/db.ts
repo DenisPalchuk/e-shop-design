@@ -1,4 +1,4 @@
-import { MongoClient, Db } from "mongodb";
+import { MongoClient, Db, ClientSession } from "mongodb";
 import { rootLogger } from "./logger";
 
 const logger = rootLogger.child({});
@@ -51,4 +51,33 @@ export async function closeDb(): Promise<void> {
     db = null;
     logger.info("MongoDB connection closed");
   }
+}
+
+export async function runInTransaction<T>(
+  work: (session: ClientSession) => Promise<T>,
+): Promise<T> {
+  await getDb();
+
+  if (!client) {
+    throw new Error("MongoDB client is not initialized");
+  }
+
+  const session = client.startSession();
+  let hasResult = false;
+  let result!: T;
+
+  try {
+    await session.withTransaction(async () => {
+      result = await work(session);
+      hasResult = true;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (!hasResult) {
+    throw new Error("Transaction completed without returning a result");
+  }
+
+  return result;
 }

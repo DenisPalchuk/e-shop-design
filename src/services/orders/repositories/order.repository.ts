@@ -1,4 +1,4 @@
-import { Db } from "mongodb";
+import { ClientSession, Db } from "mongodb";
 import { OrderDocument, ShipmentSummary } from "../types";
 import { notFoundError } from "../../../shared/errors";
 import { Logger } from "../../../shared/logger";
@@ -11,9 +11,9 @@ export class OrderRepository {
     private readonly logger: Logger,
   ) {}
 
-  async insert(order: OrderDocument): Promise<void> {
+  async insert(order: OrderDocument, session?: ClientSession): Promise<void> {
     this.logger.info("Inserting order into MongoDB", { orderId: order._id });
-    await this.db.collection<OrderDocument>(COLLECTION).insertOne(order);
+    await this.db.collection<OrderDocument>(COLLECTION).insertOne(order, { session });
     this.logger.info("Order inserted successfully", { orderId: order._id });
   }
 

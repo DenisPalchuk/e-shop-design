@@ -4,11 +4,14 @@ import { Logger } from "../../shared/logger";
 import { OrderRepository } from "./repositories/order.repository";
 import { IdempotencyRepository } from "./repositories/idempotency.repository";
 import { OrderEvents } from "./events/order.events";
+import { IPaymentProvider } from "../payments/providers/payment-provider.interface";
+import { MockStripeProvider } from "../payments/providers/stripe/mock-stripe.provider";
 
 export interface OrdersContext {
   ordersRepository: OrderRepository;
   idempotencyRepository: IdempotencyRepository;
   ordersEvents: OrderEvents;
+  paymentProvider: IPaymentProvider;
 }
 
 export async function init(logger: Logger): Promise<OrdersContext> {
@@ -22,5 +25,6 @@ export async function init(logger: Logger): Promise<OrdersContext> {
       getEventBridgeClient(),
       logger,
     ),
+    paymentProvider: new MockStripeProvider(),
   };
 }

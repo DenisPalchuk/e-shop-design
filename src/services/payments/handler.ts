@@ -11,14 +11,14 @@ import { generatePaymentId, generateRequestId } from "../../shared/ids";
 type EventBridgeEnvelope<T> = { "detail-type": string; detail: T };
 
 // ---------------------------------------------------------------------------
-// Event: order.created — store a pending payment record for later charge
+// Event: order.created — store a pending payment authorization for later capture
 // ---------------------------------------------------------------------------
 
 async function handleOrderCreated(
   data: OrderCreatedEventDetail["data"],
   requestId: string,
 ): Promise<void> {
-  const { orderId, paymentDetails } = data;
+  const { orderId, paymentAuthorization } = data;
   const logger = createLogger(orderId, requestId);
 
   logger.info("Storing pending payment record from order.created", { orderId });
@@ -29,10 +29,10 @@ async function handleOrderCreated(
   const payment: PaymentDocument = {
     _id: generatePaymentId(),
     orderId,
-    provider: paymentDetails.provider,
+    provider: paymentAuthorization.provider,
     status: "pending",
     amountCents: 0, // unknown until invoice.generated
-    paymentToken: paymentDetails.token,
+    authorizationRef: paymentAuthorization.authorizationRef,
     transactionRef: null,
     idempotencyKey: `${orderId}_pay`,
     failureReason: null,
@@ -77,9 +77,9 @@ async function handleInvoiceGenerated(
   await paymentRepository.updateStatus(payment._id, "pending", {});
 
   try {
-    const result = await paymentProvider.charge({
+    const result = await paymentProvider.capture({
       amountCents: grandTotalCents,
-      token: payment.paymentToken,
+      authorizationRef: payment.authorizationRef,
       idempotencyKey: payment.idempotencyKey,
     });
 
