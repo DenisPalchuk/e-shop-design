@@ -1,0 +1,11 @@
+config:
+  aws:region: us-east-1
+  checkout-infra:atlasOrgId: 000000000000000000000000
+  checkout-infra:atlasProjectName: e-shop-checkout-dev
+  checkout-infra:atlasClusterName: checkout-free
+  checkout-infra:atlasDatabaseName: ecommerce
+  checkout-infra:atlasDbUsername: checkoutapp
+  checkout-infra:atlasRegion: US_EAST_1
+  checkout-infra:atlasAccessListCidr: 0.0.0.0/0
+  checkout-infra:eventBusName: checkout-events
+  checkout-infra:namePrefix: checkout-dev

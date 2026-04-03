@@ -1,0 +1,148 @@
+name: Pulumi Infra
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pulumi-infra.yml"
+      - "infra/**"
+      - "src/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/pulumi-infra.yml"
+      - "infra/**"
+      - "src/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-central-1' }}
+  PULUMI_STACK: ${{ vars.PULUMI_STACK || 'dev' }}
+  PULUMI_BACKEND_URL: ${{ secrets.PULUMI_BACKEND_URL }}
+  PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+  ATLAS_ORG_ID: ${{ vars.ATLAS_ORG_ID }}
+  ATLAS_PROJECT_NAME: ${{ vars.ATLAS_PROJECT_NAME || 'e-shop-checkout-dev' }}
+  ATLAS_CLUSTER_NAME: ${{ vars.ATLAS_CLUSTER_NAME || 'checkout-free' }}
+  ATLAS_DATABASE_NAME: ${{ vars.ATLAS_DATABASE_NAME || 'ecommerce' }}
+  ATLAS_DB_USERNAME: ${{ vars.ATLAS_DB_USERNAME || 'checkoutapp' }}
+  ATLAS_REGION: ${{ vars.ATLAS_REGION || 'US_EAST_1' }}
+  ATLAS_ACCESS_LIST_CIDR: ${{ vars.ATLAS_ACCESS_LIST_CIDR || '0.0.0.0/0' }}
+  RESOURCE_NAME_PREFIX: ${{ vars.RESOURCE_NAME_PREFIX || 'checkout-dev' }}
+  EVENTBRIDGE_BUS_NAME: ${{ vars.EVENTBRIDGE_BUS_NAME || 'checkout-events' }}
+
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            src/package-lock.json
+            infra/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install source dependencies
+        run: npm ci
+        working-directory: src
+
+      - name: Install infrastructure dependencies
+        run: npm ci
+        working-directory: infra
+
+      - name: Build Lambda bundles
+        run: npm run build:lambdas
+        working-directory: infra
+
+      - name: Pulumi preview
+        uses: pulumi/actions@v6
+        with:
+          command: preview
+          stack-name: ${{ env.PULUMI_STACK }}
+          cloud-url: ${{ env.PULUMI_BACKEND_URL }}
+          work-dir: infra
+          comment-on-pr: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          PULUMI_CONFIG_PASSPHRASE: ${{ env.PULUMI_CONFIG_PASSPHRASE }}
+          ATLAS_ORG_ID: ${{ env.ATLAS_ORG_ID }}
+          ATLAS_PROJECT_NAME: ${{ env.ATLAS_PROJECT_NAME }}
+          ATLAS_CLUSTER_NAME: ${{ env.ATLAS_CLUSTER_NAME }}
+          ATLAS_DATABASE_NAME: ${{ env.ATLAS_DATABASE_NAME }}
+          ATLAS_DB_USERNAME: ${{ env.ATLAS_DB_USERNAME }}
+          ATLAS_REGION: ${{ env.ATLAS_REGION }}
+          ATLAS_ACCESS_LIST_CIDR: ${{ env.ATLAS_ACCESS_LIST_CIDR }}
+          EVENTBRIDGE_BUS_NAME: ${{ env.EVENTBRIDGE_BUS_NAME }}
+          RESOURCE_NAME_PREFIX: ${{ env.RESOURCE_NAME_PREFIX }}
+          MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_KEY }}
+          MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets.MONGODB_ATLAS_PRIVATE_KEY }}
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            src/package-lock.json
+            infra/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install source dependencies
+        run: npm ci
+        working-directory: src
+
+      - name: Install infrastructure dependencies
+        run: npm ci
+        working-directory: infra
+
+      - name: Build Lambda bundles
+        run: npm run build:lambdas
+        working-directory: infra
+
+      - name: Pulumi up
+        uses: pulumi/actions@v6
+        with:
+          command: up
+          stack-name: ${{ env.PULUMI_STACK }}
+          cloud-url: ${{ env.PULUMI_BACKEND_URL }}
+          work-dir: infra
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          PULUMI_CONFIG_PASSPHRASE: ${{ env.PULUMI_CONFIG_PASSPHRASE }}
+          ATLAS_ORG_ID: ${{ env.ATLAS_ORG_ID }}
+          ATLAS_PROJECT_NAME: ${{ env.ATLAS_PROJECT_NAME }}
+          ATLAS_CLUSTER_NAME: ${{ env.ATLAS_CLUSTER_NAME }}
+          ATLAS_DATABASE_NAME: ${{ env.ATLAS_DATABASE_NAME }}
+          ATLAS_DB_USERNAME: ${{ env.ATLAS_DB_USERNAME }}
+          ATLAS_REGION: ${{ env.ATLAS_REGION }}
+          ATLAS_ACCESS_LIST_CIDR: ${{ env.ATLAS_ACCESS_LIST_CIDR }}
+          EVENTBRIDGE_BUS_NAME: ${{ env.EVENTBRIDGE_BUS_NAME }}
+          RESOURCE_NAME_PREFIX: ${{ env.RESOURCE_NAME_PREFIX }}
+          MONGODB_ATLAS_PUBLIC_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_KEY }}
+          MONGODB_ATLAS_PRIVATE_KEY: ${{ secrets.MONGODB_ATLAS_PRIVATE_KEY }}

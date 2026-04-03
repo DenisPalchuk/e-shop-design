@@ -1,0 +1,6 @@
+name: checkout-infra
+runtime:
+  name: nodejs
+  options:
+    packagemanager: npm
+description: Pulumi deployment for the e-shop checkout system
