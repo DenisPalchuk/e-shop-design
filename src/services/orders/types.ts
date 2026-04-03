@@ -19,7 +19,19 @@ export interface OrderItem {
 
 export type ShippingMethod = "standard" | "express" | "overnight";
 export type PaymentProvider = "stripe" | "paypal";
+export type ShippingProvider = "dhl" | "fedex";
 export type OrderStatus = "pending" | "confirmed" | "processing" | "shipped" | "delivered" | "cancelled" | "failed";
+export type ShipmentStatus = "created" | "in_transit" | "delivered" | "held";
+
+export interface ShipmentSummary {
+  shipmentId: string;
+  status: ShipmentStatus;
+  trackingNumber: string;
+  provider: ShippingProvider;
+  items: OrderItem[];
+  shippedAt: string;
+  deliveredAt: string | null;
+}
 
 export interface StatusHistoryEntry {
   status: OrderStatus;
@@ -45,6 +57,7 @@ export interface OrderDocument {
   paymentToken: string;
   grandTotalCents: number | null;
   invoiceId: string | null;
+  shipments: ShipmentSummary[];
   statusHistory: StatusHistoryEntry[];
   createdAt: string; // ISO-8601
   updatedAt: string; // ISO-8601
@@ -106,7 +119,7 @@ export interface GetOrderResponse {
   grandTotalCents: number | null;
   invoiceId: string | null;
   payment: { status: string; provider: PaymentProvider };
-  shipments: unknown[];
+  shipments: ShipmentSummary[];
   statusHistory: StatusHistoryEntry[];
   createdAt: string;
   updatedAt: string;
@@ -116,6 +129,30 @@ export interface GetOrderResponse {
 // EventBridge event shapes
 // ---------------------------------------------------------------------------
 
+// Consumed: emitted by Shipment Service
+export interface ShipmentCreatedEventDetail {
+  metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
+  data: {
+    orderId: string;
+    shipmentId: string;
+    trackingNumber: string;
+    provider: ShippingProvider;
+    items: OrderItem[];
+    shippedAt: string;
+  };
+}
+
+export interface ShipmentDeliveredEventDetail {
+  metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
+  data: {
+    orderId: string;
+    shipmentId: string;
+    trackingNumber: string;
+    deliveredAt: string;
+  };
+}
+
+// Produced
 export interface OrderCreatedEventDetail {
   metadata: {
     eventId: string;

@@ -103,5 +103,6 @@ export interface InvoiceGeneratedEventDetail {
     orderId: string;
     invoiceId: string;
     invoiceNumber: string;
+    grandTotalCents: number;
   };
 }

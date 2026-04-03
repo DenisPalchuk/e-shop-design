@@ -36,3 +36,11 @@ export function generateRequestId(): string {
 export function generateInvoiceId(): string {
   return `inv_${nanoid(16)}`;
 }
+
+export function generatePaymentId(): string {
+  return `pay_${nanoid(16)}`;
+}
+
+export function generateShipmentId(): string {
+  return `shp_${nanoid(16)}`;
+}

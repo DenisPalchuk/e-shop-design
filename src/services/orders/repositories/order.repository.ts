@@ -1,5 +1,5 @@
 import { Db } from "mongodb";
-import { OrderDocument } from "../types";
+import { OrderDocument, ShipmentSummary } from "../types";
 import { notFoundError } from "../../../shared/errors";
 import { Logger } from "../../../shared/logger";
 
@@ -31,5 +31,34 @@ export class OrderRepository {
 
     this.logger.info("Order fetched successfully", { orderId });
     return order;
+  }
+
+  async addShipment(orderId: string, shipment: ShipmentSummary): Promise<void> {
+    this.logger.info("Adding shipment to order", { orderId, shipmentId: shipment.shipmentId });
+    await this.db.collection<OrderDocument>(COLLECTION).updateOne(
+      { _id: orderId },
+      {
+        $push: { shipments: shipment },
+        $set: { updatedAt: new Date().toISOString() },
+      },
+    );
+  }
+
+  async markShipmentDelivered(
+    orderId: string,
+    shipmentId: string,
+    deliveredAt: string,
+  ): Promise<void> {
+    this.logger.info("Marking shipment delivered on order", { orderId, shipmentId });
+    await this.db.collection<OrderDocument>(COLLECTION).updateOne(
+      { _id: orderId, "shipments.shipmentId": shipmentId },
+      {
+        $set: {
+          "shipments.$.status": "delivered",
+          "shipments.$.deliveredAt": deliveredAt,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
   }
 }

@@ -25,6 +25,7 @@ export class InvoiceEvents {
         orderId: invoice.orderId,
         invoiceId: invoice._id,
         invoiceNumber: invoice.invoiceNumber,
+        grandTotalCents: invoice.grandTotalCents,
       },
     };
 

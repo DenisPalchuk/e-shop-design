@@ -1,7 +1,14 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2, SQSEvent, SQSRecord } from "aws-lambda";
 import { validateCreateOrder } from "./validation";
 import { init } from "./context";
-import { OrderDocument, CreateOrderResponse, GetOrderResponse } from "./types";
+import {
+  OrderDocument,
+  CreateOrderResponse,
+  GetOrderResponse,
+  ShipmentCreatedEventDetail,
+  ShipmentDeliveredEventDetail,
+  ShipmentSummary,
+} from "./types";
 import { AppError, internalError } from "../../shared/errors";
 import { createLogger } from "../../shared/logger";
 import { generateOrderId, generateRequestId } from "../../shared/ids";
@@ -87,6 +94,7 @@ async function handleCreateOrder(
     paymentToken: input.payment.token,
     grandTotalCents: null,
     invoiceId: null,
+    shipments: [],
     statusHistory: [{ status: "pending", timestamp: now.toISOString() }],
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -151,7 +159,7 @@ async function handleGetOrder(
       status: order.status === "pending" ? "pending" : "processed",
       provider: order.paymentProvider,
     },
-    shipments: [],
+    shipments: order.shipments,
     statusHistory: order.statusHistory,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
@@ -213,5 +221,88 @@ export const handler = async (
       internalError("An unexpected error occurred"),
       requestId,
     );
+  }
+};
+
+// ---------------------------------------------------------------------------
+// SQS handler — consumes shipment.created / shipment.delivered
+// ---------------------------------------------------------------------------
+
+async function handleShipmentCreated(
+  data: ShipmentCreatedEventDetail["data"],
+  requestId: string,
+): Promise<void> {
+  const { orderId, shipmentId, trackingNumber, provider, items, shippedAt } = data;
+  const logger = createLogger(orderId, requestId);
+
+  logger.info("Recording shipment on order", { orderId, shipmentId });
+
+  const { ordersRepository } = await init(logger);
+
+  const summary: ShipmentSummary = {
+    shipmentId,
+    status: "in_transit",
+    trackingNumber,
+    provider,
+    items,
+    shippedAt,
+    deliveredAt: null,
+  };
+
+  await ordersRepository.addShipment(orderId, summary);
+  logger.info("Shipment recorded on order", { orderId, shipmentId, trackingNumber });
+}
+
+async function handleShipmentDelivered(
+  data: ShipmentDeliveredEventDetail["data"],
+  requestId: string,
+): Promise<void> {
+  const { orderId, shipmentId, deliveredAt } = data;
+  const logger = createLogger(orderId, requestId);
+
+  logger.info("Marking shipment delivered on order", { orderId, shipmentId });
+
+  const { ordersRepository } = await init(logger);
+  await ordersRepository.markShipmentDelivered(orderId, shipmentId, deliveredAt);
+
+  logger.info("Shipment delivery recorded on order", { orderId, shipmentId });
+}
+
+async function processSqsRecord(record: SQSRecord, requestId: string): Promise<void> {
+  const logger = createLogger(undefined, requestId);
+
+  let envelope: { "detail-type": string; detail: unknown };
+  try {
+    envelope = JSON.parse(record.body);
+  } catch {
+    logger.error("Failed to parse SQS message body", { messageId: record.messageId });
+    throw new Error(`Invalid SQS message body: ${record.messageId}`);
+  }
+
+  const detailType = envelope["detail-type"];
+
+  if (detailType === "shipment.created") {
+    const e = envelope as { "detail-type": string; detail: ShipmentCreatedEventDetail };
+    await handleShipmentCreated(e.detail.data, requestId);
+    return;
+  }
+
+  if (detailType === "shipment.delivered") {
+    const e = envelope as { "detail-type": string; detail: ShipmentDeliveredEventDetail };
+    await handleShipmentDelivered(e.detail.data, requestId);
+    return;
+  }
+
+  logger.warn("Skipping unrecognised event type", { detailType, messageId: record.messageId });
+}
+
+export const sqsHandler = async (event: SQSEvent): Promise<void> => {
+  const requestId = generateRequestId();
+  const logger = createLogger(undefined, requestId);
+
+  logger.info("SQS batch received", { recordCount: event.Records.length, requestId });
+
+  for (const record of event.Records) {
+    await processSqsRecord(record, requestId);
   }
 };

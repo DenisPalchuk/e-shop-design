@@ -9,6 +9,11 @@ interface LogEntry {
   [key: string]: unknown;
 }
 
+interface LoggerBindings {
+  correlationId?: string;
+  requestId?: string;
+}
+
 function redact(value: unknown): unknown {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(redact);
@@ -27,53 +32,53 @@ function redact(value: unknown): unknown {
   return value;
 }
 
-function log(
-  level: LogLevel,
-  message: string,
-  context: Record<string, unknown> = {},
-  correlationId?: string,
-  requestId?: string
-): void {
-  const entry: LogEntry = {
-    level,
-    message,
-    timestamp: new Date().toISOString(),
-    ...(correlationId ? { correlationId } : {}),
-    ...(requestId ? { requestId } : {}),
-    ...(redact(context) as Record<string, unknown>),
-  };
-  // Lambda writes to stdout → CloudWatch
-  process.stdout.write(JSON.stringify(entry) + "\n");
+export class Logger {
+  constructor(private readonly bindings: LoggerBindings = {}) {}
+
+  debug(message: string, context: Record<string, unknown> = {}): void {
+    this.write("debug", message, context);
+  }
+
+  info(message: string, context: Record<string, unknown> = {}): void {
+    this.write("info", message, context);
+  }
+
+  warn(message: string, context: Record<string, unknown> = {}): void {
+    this.write("warn", message, context);
+  }
+
+  error(message: string, context: Record<string, unknown> = {}): void {
+    this.write("error", message, context);
+  }
+
+  child(bindings: LoggerBindings): Logger {
+    return new Logger({
+      correlationId: bindings.correlationId ?? this.bindings.correlationId,
+      requestId: bindings.requestId ?? this.bindings.requestId,
+    });
+  }
+
+  private write(
+    level: LogLevel,
+    message: string,
+    context: Record<string, unknown>,
+  ): void {
+    const entry: LogEntry = {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+      ...(this.bindings.correlationId ? { correlationId: this.bindings.correlationId } : {}),
+      ...(this.bindings.requestId ? { requestId: this.bindings.requestId } : {}),
+      ...(redact(context) as Record<string, unknown>),
+    };
+    // Lambda writes to stdout → CloudWatch
+    process.stdout.write(JSON.stringify(entry) + "\n");
+  }
 }
 
-export interface Logger {
-  debug(message: string, context?: Record<string, unknown>): void;
-  info(message: string, context?: Record<string, unknown>): void;
-  warn(message: string, context?: Record<string, unknown>): void;
-  error(message: string, context?: Record<string, unknown>): void;
-  child(bindings: { correlationId?: string; requestId?: string }): Logger;
-}
-
-export function createLogger(
-  correlationId?: string,
-  requestId?: string
-): Logger {
-  return {
-    debug: (message, context = {}) =>
-      log("debug", message, context, correlationId, requestId),
-    info: (message, context = {}) =>
-      log("info", message, context, correlationId, requestId),
-    warn: (message, context = {}) =>
-      log("warn", message, context, correlationId, requestId),
-    error: (message, context = {}) =>
-      log("error", message, context, correlationId, requestId),
-    child: (bindings) =>
-      createLogger(
-        bindings.correlationId ?? correlationId,
-        bindings.requestId ?? requestId
-      ),
-  };
+export function createLogger(correlationId?: string, requestId?: string): Logger {
+  return new Logger({ correlationId, requestId });
 }
 
 // Module-level root logger; callers should use .child() to attach IDs
-export const rootLogger = createLogger();
+export const rootLogger = new Logger();
