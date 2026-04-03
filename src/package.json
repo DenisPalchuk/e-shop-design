@@ -1,0 +1,28 @@
+{
+  "name": "order-service",
+  "version": "1.0.0",
+  "description": "E-commerce Order Service — US-1: Place an Order",
+  "main": "dist/order-service/handler.js",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "lint": "eslint 'order-service/**/*.ts' 'shared/**/*.ts'",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-eventbridge": "^3.1023.0",
+    "i": "^0.3.7",
+    "mongodb": "^6.7.0",
+    "nanoid": "^3.3.7",
+    "npm": "^11.12.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.161",
+    "@types/node": "^20.19.39",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
