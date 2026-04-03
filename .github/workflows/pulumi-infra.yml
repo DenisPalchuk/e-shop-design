@@ -72,10 +72,10 @@ jobs:
         uses: pulumi/actions@v6
 
       - name: Verify Pulumi S3 backend URL
-        run: test -n "$PULUMI_BACKEND_URL"
+        run: test -n "${{ vars.PULUMI_BACKEND_URL }}"
 
       - name: Login to Pulumi S3 backend
-        run: pulumi login "$PULUMI_BACKEND_URL"
+        run: pulumi login "${{ vars.PULUMI_BACKEND_URL }}"
         working-directory: infra
 
       - name: Select or create stack
