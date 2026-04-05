@@ -40,6 +40,21 @@ const bundles = [
     entry: path.join(sourceRoot, "services/shipments/handler.ts"),
     outfile: path.join(outputRoot, "shipments-sqs/index.js"),
   },
+  {
+    name: "orders-sqs",
+    entry: path.join(sourceRoot, "services/orders/handler.ts"),
+    outfile: path.join(outputRoot, "orders-sqs/index.js"),
+  },
+  {
+    name: "inventory-sqs",
+    entry: path.join(sourceRoot, "services/inventory/handler.ts"),
+    outfile: path.join(outputRoot, "inventory-sqs/index.js"),
+  },
+  {
+    name: "notifications-sqs",
+    entry: path.join(sourceRoot, "services/notifications/handler.ts"),
+    outfile: path.join(outputRoot, "notifications-sqs/index.js"),
+  },
 ];
 
 async function main() {
