@@ -19,8 +19,11 @@ export interface ShipmentsContext {
 export async function init(logger: Logger): Promise<ShipmentsContext> {
   const db = await getDb();
 
+  const shipmentRepository = new ShipmentRepository(db, logger);
+  await shipmentRepository.ensureIndexes();
+
   return {
-    shipmentRepository: new ShipmentRepository(db, logger),
+    shipmentRepository,
     orderProjectionRepository: new OrderProjectionRepository(db, logger),
     shipmentEvents: new ShipmentEvents(
       process.env.EVENTBRIDGE_BUS_NAME ?? DEFAULT_BUS_NAME,

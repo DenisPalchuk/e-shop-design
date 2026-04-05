@@ -143,13 +143,14 @@ async function handlePaymentSucceeded(
     groupCount: itemGroups.length,
   });
 
-  for (const group of itemGroups) {
+  for (const [groupIndex, group] of itemGroups.entries()) {
     const shipmentId = generateShipmentId();
     const now = new Date().toISOString();
 
     const shipment: ShipmentDocument = {
       _id: shipmentId,
       orderId,
+      groupIndex,
       items: group,
       shippingAddress: projection.shippingAddress,
       provider: "dhl",
@@ -163,7 +164,10 @@ async function handlePaymentSucceeded(
       updatedAt: now,
     };
 
-    await shipmentRepository.insert(shipment);
+    const inserted = await shipmentRepository.insertIfAbsent(shipment);
+    if (!inserted) {
+      continue;
+    }
 
     let trackingNumber: string;
     try {

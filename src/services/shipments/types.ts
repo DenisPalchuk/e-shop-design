@@ -23,6 +23,7 @@ export interface ShipmentItem {
 export interface ShipmentDocument {
   _id: string; // shp_xxx
   orderId: string;
+  groupIndex: number;
   items: ShipmentItem[];
   shippingAddress: Address;
   provider: ShippingProvider;

@@ -11,16 +11,51 @@ export class ShipmentRepository {
     private readonly logger: Logger,
   ) {}
 
-  async insert(shipment: ShipmentDocument): Promise<void> {
-    this.logger.info("Inserting shipment record", {
+  async ensureIndexes(): Promise<void> {
+    await this.db.collection<ShipmentDocument>(COLLECTION).createIndex(
+      { orderId: 1, groupIndex: 1 },
+      { unique: true, name: "orderId_groupIndex_unique" },
+    );
+  }
+
+  /**
+   * Inserts the shipment only if no document with the same (orderId, groupIndex) exists.
+   * Returns true when the document was inserted, false when it already existed.
+   * Handles the duplicate-key race that can occur when two Lambda invocations run concurrently.
+   */
+  async insertIfAbsent(shipment: ShipmentDocument): Promise<boolean> {
+    this.logger.info("Inserting shipment record if absent", {
       shipmentId: shipment._id,
       orderId: shipment.orderId,
+      groupIndex: shipment.groupIndex,
     });
-    await this.db.collection<ShipmentDocument>(COLLECTION).insertOne(shipment);
-    this.logger.info("Shipment record inserted", {
-      shipmentId: shipment._id,
-      trackingNumber: shipment.trackingNumber,
-    });
+
+    try {
+      const result = await this.db.collection<ShipmentDocument>(COLLECTION).updateOne(
+        { orderId: shipment.orderId, groupIndex: shipment.groupIndex },
+        { $setOnInsert: shipment },
+        { upsert: true },
+      );
+
+      const inserted = result.upsertedCount > 0;
+      this.logger.info(inserted ? "Shipment record inserted" : "Shipment already exists — skipping", {
+        shipmentId: shipment._id,
+        orderId: shipment.orderId,
+        groupIndex: shipment.groupIndex,
+      });
+      return inserted;
+    } catch (err: unknown) {
+      // Two concurrent invocations can both attempt the upsert before either lands.
+      // The unique index makes the second one throw E11000; treat it as "already exists".
+      if (err instanceof Error && "code" in err && (err as { code: number }).code === 11000) {
+        this.logger.info("Duplicate key on concurrent insert — treating as already exists", {
+          orderId: shipment.orderId,
+          groupIndex: shipment.groupIndex,
+        });
+        return false;
+      }
+      throw err;
+    }
   }
 
   async findByTrackingNumber(trackingNumber: string): Promise<ShipmentDocument> {
