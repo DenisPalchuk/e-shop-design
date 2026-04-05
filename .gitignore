@@ -3,3 +3,4 @@
 **/.DS_Store
 **/.pulumi
 src/.artifacts
+**/.test-dist
