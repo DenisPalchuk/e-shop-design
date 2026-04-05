@@ -31,6 +31,7 @@ export class ShipmentEvents {
         trackingNumber: shipment.trackingNumber!,
         provider: shipment.provider,
         items: shipment.items,
+        shippedAt: shipment.shippedAt!,
       },
     };
 

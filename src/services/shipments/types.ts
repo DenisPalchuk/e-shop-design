@@ -82,6 +82,7 @@ export interface ShipmentCreatedEventDetail {
     trackingNumber: string;
     provider: ShippingProvider;
     items: ShipmentItem[];
+    shippedAt: string;
   };
 }
 
