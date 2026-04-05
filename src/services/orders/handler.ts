@@ -14,6 +14,8 @@ import {
   ShipmentCreatedEventDetail,
   ShipmentDeliveredEventDetail,
   ShipmentSummary,
+  InventoryConfirmedEventDetail,
+  InventoryFailedEventDetail,
 } from "./types";
 import { AppError, conflictError, internalError } from "../../shared/errors";
 import { createLogger, Logger } from "../../shared/logger";
@@ -356,8 +358,42 @@ export const handler = async (
 };
 
 // ---------------------------------------------------------------------------
-// SQS handler — consumes shipment.created / shipment.delivered
+// SQS handler — consumes inventory.confirmed / inventory.failed /
+//               shipment.created / shipment.delivered
 // ---------------------------------------------------------------------------
+
+async function handleInventoryConfirmed(
+  data: InventoryConfirmedEventDetail["data"],
+  requestId: string,
+): Promise<void> {
+  const { orderId } = data;
+  const logger = createLogger(orderId, requestId);
+
+  logger.info("Handling inventory.confirmed — updating order status", { orderId });
+
+  const { ordersRepository } = await init(logger);
+  await ordersRepository.updateStatus(orderId, "inventory_confirmed");
+
+  logger.info("Order status updated to inventory_confirmed", { orderId });
+}
+
+async function handleInventoryFailed(
+  data: InventoryFailedEventDetail["data"],
+  requestId: string,
+): Promise<void> {
+  const { orderId, unavailableItems } = data;
+  const logger = createLogger(orderId, requestId);
+
+  logger.warn("Handling inventory.failed — updating order status to out_of_stock", {
+    orderId,
+    unavailableItems,
+  });
+
+  const { ordersRepository } = await init(logger);
+  await ordersRepository.updateStatus(orderId, "out_of_stock");
+
+  logger.info("Order status updated to out_of_stock", { orderId });
+}
 
 async function handleShipmentCreated(
   data: ShipmentCreatedEventDetail["data"],
@@ -411,6 +447,18 @@ async function processSqsRecord(record: SQSRecord, requestId: string): Promise<v
   }
 
   const detailType = envelope["detail-type"];
+
+  if (detailType === "inventory.confirmed") {
+    const e = envelope as { "detail-type": string; detail: InventoryConfirmedEventDetail };
+    await handleInventoryConfirmed(e.detail.data, requestId);
+    return;
+  }
+
+  if (detailType === "inventory.failed") {
+    const e = envelope as { "detail-type": string; detail: InventoryFailedEventDetail };
+    await handleInventoryFailed(e.detail.data, requestId);
+    return;
+  }
 
   if (detailType === "shipment.created") {
     const e = envelope as { "detail-type": string; detail: ShipmentCreatedEventDetail };

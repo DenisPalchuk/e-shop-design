@@ -20,7 +20,16 @@ export interface OrderItem {
 export type ShippingMethod = "standard" | "express" | "overnight";
 export type PaymentProvider = "stripe" | "paypal";
 export type ShippingProvider = "dhl" | "fedex";
-export type OrderStatus = "pending" | "confirmed" | "processing" | "shipped" | "delivered" | "cancelled" | "failed";
+export type OrderStatus =
+  | "pending"
+  | "out_of_stock"
+  | "inventory_confirmed"
+  | "confirmed"
+  | "processing"
+  | "shipped"
+  | "delivered"
+  | "cancelled"
+  | "failed";
 export type ShipmentStatus = "created" | "in_transit" | "delivered" | "held";
 
 export interface ShipmentSummary {
@@ -165,6 +174,31 @@ export interface ShipmentDeliveredEventDetail {
     shipmentId: string;
     trackingNumber: string;
     deliveredAt: string;
+  };
+}
+
+// Consumed: emitted by Inventory Service
+export interface InventoryConfirmedEventDetail {
+  metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
+  data: {
+    orderId: string;
+    checkId: string;
+  };
+}
+
+export interface UnavailableItem {
+  productId: string;
+  variantId?: string;
+  requestedQty: number;
+  availableQty: number;
+}
+
+export interface InventoryFailedEventDetail {
+  metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
+  data: {
+    orderId: string;
+    checkId: string;
+    unavailableItems: UnavailableItem[];
   };
 }
 

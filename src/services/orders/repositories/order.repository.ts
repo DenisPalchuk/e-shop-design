@@ -33,6 +33,18 @@ export class OrderRepository {
     return order;
   }
 
+  async updateStatus(orderId: string, status: OrderDocument["status"]): Promise<void> {
+    this.logger.info("Updating order status", { orderId, status });
+    await this.db.collection<OrderDocument>(COLLECTION).updateOne(
+      { _id: orderId },
+      {
+        $set: { status, updatedAt: new Date().toISOString() },
+        $push: { statusHistory: { status, timestamp: new Date().toISOString() } },
+      },
+    );
+    this.logger.info("Order status updated", { orderId, status });
+  }
+
   async addShipment(orderId: string, shipment: ShipmentSummary): Promise<void> {
     this.logger.info("Adding shipment to order", { orderId, shipmentId: shipment.shipmentId });
     await this.db.collection<OrderDocument>(COLLECTION).updateOne(

@@ -44,3 +44,11 @@ export function generatePaymentId(): string {
 export function generateShipmentId(): string {
   return `shp_${nanoid(16)}`;
 }
+
+export function generateNotificationId(): string {
+  return `ntf_${nanoid(16)}`;
+}
+
+export function generateInventoryCheckId(): string {
+  return `ivc_${nanoid(16)}`;
+}
