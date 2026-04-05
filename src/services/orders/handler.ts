@@ -13,6 +13,7 @@ import {
   GetOrderResponse,
   ShipmentCreatedEventDetail,
   ShipmentDeliveredEventDetail,
+  ShipmentHeldEventDetail,
   ShipmentSummary,
   InventoryConfirmedEventDetail,
   InventoryFailedEventDetail,
@@ -420,6 +421,37 @@ async function handleShipmentCreated(
   logger.info("Shipment recorded on order", { orderId, shipmentId, trackingNumber });
 }
 
+async function handleShipmentHeld(
+  data: ShipmentHeldEventDetail["data"],
+  requestId: string,
+): Promise<void> {
+  const { orderId, shipmentId, items, reason } = data;
+  const logger = createLogger(orderId, requestId);
+
+  logger.warn("Handling shipment.held — recording held shipment and updating order status", {
+    orderId,
+    shipmentId,
+    reason,
+  });
+
+  const { ordersRepository } = await init(logger);
+
+  const summary: ShipmentSummary = {
+    shipmentId,
+    status: "held",
+    trackingNumber: null,
+    provider: "dhl",
+    items,
+    shippedAt: null,
+    deliveredAt: null,
+  };
+
+  await ordersRepository.addShipment(orderId, summary);
+  await ordersRepository.updateStatus(orderId, "shipment_held");
+
+  logger.warn("Order status updated to shipment_held", { orderId, shipmentId });
+}
+
 async function handleShipmentDelivered(
   data: ShipmentDeliveredEventDetail["data"],
   requestId: string,
@@ -469,6 +501,12 @@ async function processSqsRecord(record: SQSRecord, requestId: string): Promise<v
   if (detailType === "shipment.delivered") {
     const e = envelope as { "detail-type": string; detail: ShipmentDeliveredEventDetail };
     await handleShipmentDelivered(e.detail.data, requestId);
+    return;
+  }
+
+  if (detailType === "shipment.held") {
+    const e = envelope as { "detail-type": string; detail: ShipmentHeldEventDetail };
+    await handleShipmentHeld(e.detail.data, requestId);
     return;
   }
 

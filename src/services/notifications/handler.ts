@@ -9,6 +9,7 @@ import {
   ShipmentCreatedEventDetail,
   ShipmentDeliveredEventDetail,
   InventoryFailedEventDetail,
+  ShipmentHeldEventDetail,
 } from "./types";
 import { createLogger } from "../../shared/logger";
 import { generateNotificationId, generateRequestId } from "../../shared/ids";
@@ -222,6 +223,41 @@ async function handleInventoryFailed(
 }
 
 // ---------------------------------------------------------------------------
+// Event: shipment.held — alert support staff (retries exhausted)
+// ---------------------------------------------------------------------------
+
+async function handleShipmentHeld(
+  data: ShipmentHeldEventDetail["data"],
+  requestId: string,
+): Promise<void> {
+  const { orderId, shipmentId, reason, retriesExhausted } = data;
+  const logger = createLogger(orderId, requestId);
+
+  logger.warn("Handling shipment.held — notifying support staff", { orderId, shipmentId });
+
+  if (!retriesExhausted) {
+    logger.info("Shipment held but retries not exhausted — no support alert needed", {
+      orderId,
+      shipmentId,
+    });
+    return;
+  }
+
+  const supportEmail = process.env.SUPPORT_EMAIL ?? "support@example.com";
+  const ctx = await init(logger);
+
+  await sendNotification(
+    ctx,
+    orderId,
+    `${orderId}_shipment_held_${shipmentId}`,
+    supportEmail,
+    `[ACTION REQUIRED] Shipment ${shipmentId} is held after retries exhausted`,
+    `Support team,\n\nShipment ${shipmentId} for order ${orderId} could not be fulfilled after all retry attempts.\n\nReason: ${reason}\n\nPlease review and either manually retry or cancel the shipment via the admin API:\n  POST /v1/admin/shipments/${shipmentId}/retry\n  POST /v1/admin/shipments/${shipmentId}/cancel`,
+    logger,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Event: shipment.delivered — send delivery confirmation email
 // ---------------------------------------------------------------------------
 
@@ -299,6 +335,12 @@ async function processRecord(record: SQSRecord, requestId: string): Promise<void
   if (detailType === "inventory.failed") {
     const event = envelope as EventBridgeEnvelope<InventoryFailedEventDetail>;
     await handleInventoryFailed(event.detail.data, requestId);
+    return;
+  }
+
+  if (detailType === "shipment.held") {
+    const event = envelope as EventBridgeEnvelope<ShipmentHeldEventDetail>;
+    await handleShipmentHeld(event.detail.data, requestId);
     return;
   }
 

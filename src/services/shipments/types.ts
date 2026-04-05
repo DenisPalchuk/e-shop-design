@@ -29,7 +29,7 @@ export interface ShipmentDocument {
   trackingNumber: string | null;
   status: ShipmentStatus;
   retryCount: number;
-  circuitState: "closed" | "open";
+  circuitState: "closed" | "open" | "half-open";
   shippedAt: string | null;
   deliveredAt: string | null;
   createdAt: string;
@@ -91,5 +91,16 @@ export interface ShipmentDeliveredEventDetail {
     shipmentId: string;
     trackingNumber: string;
     deliveredAt: string;
+  };
+}
+
+export interface ShipmentHeldEventDetail {
+  metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
+  data: {
+    orderId: string;
+    shipmentId: string;
+    items: ShipmentItem[];
+    reason: string;
+    retriesExhausted: boolean;
   };
 }

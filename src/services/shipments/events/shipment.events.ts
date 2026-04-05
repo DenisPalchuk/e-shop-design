@@ -3,6 +3,7 @@ import {
   ShipmentDocument,
   ShipmentCreatedEventDetail,
   ShipmentDeliveredEventDetail,
+  ShipmentHeldEventDetail,
 } from "../types";
 import { generateEventId } from "../../../shared/ids";
 import { Logger } from "../../../shared/logger";
@@ -34,6 +35,28 @@ export class ShipmentEvents {
     };
 
     await this.publish("shipment.created", detail, shipment.orderId, eventId);
+  }
+
+  async publishShipmentHeld(
+    orderId: string,
+    shipmentId: string,
+    items: ShipmentHeldEventDetail["data"]["items"],
+    reason: string,
+    retriesExhausted: boolean,
+  ): Promise<void> {
+    const eventId = generateEventId();
+
+    const detail: ShipmentHeldEventDetail = {
+      metadata: {
+        eventId,
+        timestamp: new Date().toISOString(),
+        correlationId: orderId,
+        version: "1.0",
+      },
+      data: { orderId, shipmentId, items, reason, retriesExhausted },
+    };
+
+    await this.publish("shipment.held", detail, orderId, eventId);
   }
 
   async publishShipmentDelivered(shipment: ShipmentDocument): Promise<void> {

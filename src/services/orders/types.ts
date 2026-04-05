@@ -29,16 +29,17 @@ export type OrderStatus =
   | "shipped"
   | "delivered"
   | "cancelled"
-  | "failed";
+  | "failed"
+  | "shipment_held";
 export type ShipmentStatus = "created" | "in_transit" | "delivered" | "held";
 
 export interface ShipmentSummary {
   shipmentId: string;
   status: ShipmentStatus;
-  trackingNumber: string;
+  trackingNumber: string | null; // null for held shipments that never got a tracking number
   provider: ShippingProvider;
   items: OrderItem[];
-  shippedAt: string;
+  shippedAt: string | null; // null for held shipments
   deliveredAt: string | null;
 }
 
@@ -174,6 +175,17 @@ export interface ShipmentDeliveredEventDetail {
     shipmentId: string;
     trackingNumber: string;
     deliveredAt: string;
+  };
+}
+
+export interface ShipmentHeldEventDetail {
+  metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
+  data: {
+    orderId: string;
+    shipmentId: string;
+    items: OrderItem[];
+    reason: string;
+    retriesExhausted: boolean;
   };
 }
 

@@ -8,13 +8,17 @@ import { init } from "./context";
 import {
   ShipmentDocument,
   ShipmentItem,
+  Address,
   OrderCreatedEventDetail,
   PaymentSucceededEventDetail,
 } from "./types";
 import { AppError, internalError } from "../../shared/errors";
-import { createLogger } from "../../shared/logger";
+import { createLogger, Logger } from "../../shared/logger";
 import { generateShipmentId, generateRequestId } from "../../shared/ids";
 import { jsonResponse, errorResponse, parseRoute } from "../../shared/http";
+import { IShippingProvider } from "./providers/shipping-provider.interface";
+import { CircuitBreaker, CircuitOpenError } from "./circuit-breaker";
+import { getRetryConfig, computeDelay, sleep } from "./retry";
 
 // ---------------------------------------------------------------------------
 // Split shipping — mock warehouse assignment
@@ -27,6 +31,61 @@ function splitIntoGroups(items: ShipmentItem[]): ShipmentItem[][] {
   const groupA = items.filter((_, i) => i % 2 === 0);
   const groupB = items.filter((_, i) => i % 2 !== 0);
   return groupB.length > 0 ? [groupA, groupB] : [groupA];
+}
+
+// ---------------------------------------------------------------------------
+// Retry + circuit breaker wrapper for shipping provider calls
+// ---------------------------------------------------------------------------
+
+async function shipWithRetry(
+  shipmentId: string,
+  orderId: string,
+  items: ShipmentItem[],
+  address: Address,
+  shippingProvider: IShippingProvider,
+  circuitBreaker: CircuitBreaker,
+  logger: Logger,
+): Promise<string> {
+  const config = getRetryConfig();
+
+  for (let attempt = 0; attempt <= config.maxAttempts; attempt++) {
+    const allowed = await circuitBreaker.isAllowed();
+    if (!allowed) {
+      throw new CircuitOpenError("dhl");
+    }
+
+    try {
+      const { trackingNumber } = await shippingProvider.ship({ shipmentId, orderId, items, address });
+      await circuitBreaker.recordSuccess();
+      return trackingNumber;
+    } catch (err) {
+      await circuitBreaker.recordFailure();
+      const reason = err instanceof Error ? err.message : String(err);
+
+      if (attempt < config.maxAttempts) {
+        const delay = computeDelay(attempt, config);
+        logger.warn("Shipping provider call failed — will retry", {
+          shipmentId,
+          orderId,
+          attempt,
+          reason,
+          nextRetryMs: delay,
+        });
+        await sleep(delay);
+      } else {
+        logger.error("Shipping provider call failed — retries exhausted", {
+          shipmentId,
+          orderId,
+          attempt,
+          reason,
+        });
+        throw new Error(`Shipping provider unavailable after ${config.maxAttempts + 1} attempts: ${reason}`);
+      }
+    }
+  }
+
+  // Unreachable — satisfies TypeScript
+  throw new Error("Unexpected exit from retry loop");
 }
 
 // ---------------------------------------------------------------------------
@@ -67,11 +126,17 @@ async function handlePaymentSucceeded(
 
   logger.info("Processing payment.succeeded — initiating shipment(s)", { orderId });
 
-  const { shipmentRepository, orderProjectionRepository, shipmentEvents, shippingProvider } =
-    await init(logger);
+  const {
+    shipmentRepository,
+    orderProjectionRepository,
+    shipmentEvents,
+    shippingProvider,
+    circuitBreaker,
+  } = await init(logger);
 
   const projection = await orderProjectionRepository.findByOrderId(orderId);
   const itemGroups = splitIntoGroups(projection.items);
+  const retryConfig = getRetryConfig();
 
   logger.info("Shipment groups determined", {
     orderId,
@@ -100,12 +165,33 @@ async function handlePaymentSucceeded(
 
     await shipmentRepository.insert(shipment);
 
-    const { trackingNumber } = await shippingProvider.ship({
-      shipmentId,
-      orderId,
-      items: group,
-      address: projection.shippingAddress,
-    });
+    let trackingNumber: string;
+    try {
+      trackingNumber = await shipWithRetry(
+        shipmentId,
+        orderId,
+        group,
+        projection.shippingAddress,
+        shippingProvider,
+        circuitBreaker,
+        logger,
+      );
+    } catch (err) {
+      if (err instanceof CircuitOpenError) {
+        logger.warn("Deferring shipment — circuit breaker open", { shipmentId, orderId });
+        await shipmentRepository.updateHeld(shipmentId, 0);
+        await shipmentEvents.publishShipmentHeld(orderId, shipmentId, group, err.message, false);
+        continue;
+      }
+
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error("Holding shipment after retries exhausted", { shipmentId, orderId, reason });
+      await shipmentRepository.updateHeld(shipmentId, retryConfig.maxAttempts);
+      await shipmentEvents.publishShipmentHeld(orderId, shipmentId, group, reason, true);
+
+      // Continue processing remaining groups rather than aborting the whole batch
+      continue;
+    }
 
     const shippedAt = new Date().toISOString();
     await shipmentRepository.updateTrackingNumber(shipmentId, trackingNumber, shippedAt);

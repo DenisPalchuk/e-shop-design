@@ -96,3 +96,13 @@ export interface InventoryFailedEventDetail {
     unavailableItems: UnavailableItem[];
   };
 }
+
+export interface ShipmentHeldEventDetail {
+  metadata: { eventId: string; timestamp: string; correlationId: string; version: string };
+  data: {
+    orderId: string;
+    shipmentId: string;
+    reason: string;
+    retriesExhausted: boolean;
+  };
+}

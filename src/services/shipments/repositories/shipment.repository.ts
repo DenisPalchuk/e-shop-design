@@ -57,6 +57,21 @@ export class ShipmentRepository {
     );
   }
 
+  async updateHeld(shipmentId: string, retryCount: number): Promise<void> {
+    this.logger.warn("Marking shipment as held", { shipmentId, retryCount });
+    await this.db.collection<ShipmentDocument>(COLLECTION).updateOne(
+      { _id: shipmentId },
+      {
+        $set: {
+          status: "held",
+          retryCount,
+          circuitState: "open",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+  }
+
   async updateDelivered(shipmentId: string, deliveredAt: string): Promise<void> {
     this.logger.info("Marking shipment as delivered", { shipmentId });
     await this.db.collection<ShipmentDocument>(COLLECTION).updateOne(

@@ -6,12 +6,14 @@ import { OrderProjectionRepository } from "./repositories/order-projection.repos
 import { ShipmentEvents } from "./events/shipment.events";
 import { IShippingProvider } from "./providers/shipping-provider.interface";
 import { MockDhlProvider } from "./providers/mock-dhl.provider";
+import { CircuitBreaker } from "./circuit-breaker";
 
 export interface ShipmentsContext {
   shipmentRepository: ShipmentRepository;
   orderProjectionRepository: OrderProjectionRepository;
   shipmentEvents: ShipmentEvents;
   shippingProvider: IShippingProvider;
+  circuitBreaker: CircuitBreaker;
 }
 
 export async function init(logger: Logger): Promise<ShipmentsContext> {
@@ -26,5 +28,6 @@ export async function init(logger: Logger): Promise<ShipmentsContext> {
       logger,
     ),
     shippingProvider: new MockDhlProvider(),
+    circuitBreaker: new CircuitBreaker("dhl", db, logger),
   };
 }
