@@ -62,6 +62,25 @@ const lambdaServices = {
     tags: config.tags,
     eventBusArn: eventBus.arn,
   }),
+  ordersSqs: new LambdaService("orders-sqs-service", {
+    ...lambdaDefinitions.ordersSqs,
+    namePrefix: config.namePrefix,
+    environment: lambdaEnvironment,
+    tags: config.tags,
+  }),
+  inventorySqs: new LambdaService("inventory-sqs-service", {
+    ...lambdaDefinitions.inventorySqs,
+    namePrefix: config.namePrefix,
+    environment: lambdaEnvironment,
+    tags: config.tags,
+    eventBusArn: eventBus.arn,
+  }),
+  notificationsSqs: new LambdaService("notifications-sqs-service", {
+    ...lambdaDefinitions.notificationsSqs,
+    namePrefix: config.namePrefix,
+    environment: lambdaEnvironment,
+    tags: config.tags,
+  }),
 };
 
 const queueSubscriptions = {
@@ -89,6 +108,30 @@ const queueSubscriptions = {
     namePrefix: config.namePrefix,
     tags: config.tags,
   }),
+  ordersEvents: new QueueSubscription(queueDefinitions[3].name, {
+    queueName: queueDefinitions[3].queueName,
+    detailTypes: [...queueDefinitions[3].detailTypes],
+    targetLambda: lambdaServices[queueDefinitions[3].lambdaKey].lambda,
+    eventBus,
+    namePrefix: config.namePrefix,
+    tags: config.tags,
+  }),
+  inventoryEvents: new QueueSubscription(queueDefinitions[4].name, {
+    queueName: queueDefinitions[4].queueName,
+    detailTypes: [...queueDefinitions[4].detailTypes],
+    targetLambda: lambdaServices[queueDefinitions[4].lambdaKey].lambda,
+    eventBus,
+    namePrefix: config.namePrefix,
+    tags: config.tags,
+  }),
+  notificationsEvents: new QueueSubscription(queueDefinitions[5].name, {
+    queueName: queueDefinitions[5].queueName,
+    detailTypes: [...queueDefinitions[5].detailTypes],
+    targetLambda: lambdaServices[queueDefinitions[5].lambdaKey].lambda,
+    eventBus,
+    namePrefix: config.namePrefix,
+    tags: config.tags,
+  }),
 };
 
 const httpApi = new HttpApi("checkout-http-api-component", {
@@ -111,6 +154,9 @@ export const atlasSrvConnectionString = atlas.mongoSrv;
 export const invoicesQueueName = queueSubscriptions.invoicesEvents.queue.name;
 export const paymentsQueueName = queueSubscriptions.paymentsEvents.queue.name;
 export const shipmentsQueueName = queueSubscriptions.shipmentsEvents.queue.name;
+export const ordersQueueName = queueSubscriptions.ordersEvents.queue.name;
+export const inventoryQueueName = queueSubscriptions.inventoryEvents.queue.name;
+export const notificationsQueueName = queueSubscriptions.notificationsEvents.queue.name;
 export const lambdaNames = {
   ordersApi: lambdaServices.ordersApi.lambda.name,
   invoicesApi: lambdaServices.invoicesApi.lambda.name,
@@ -118,4 +164,7 @@ export const lambdaNames = {
   paymentsSqs: lambdaServices.paymentsSqs.lambda.name,
   shipmentsApi: lambdaServices.shipmentsApi.lambda.name,
   shipmentsSqs: lambdaServices.shipmentsSqs.lambda.name,
+  ordersSqs: lambdaServices.ordersSqs.lambda.name,
+  inventorySqs: lambdaServices.inventorySqs.lambda.name,
+  notificationsSqs: lambdaServices.notificationsSqs.lambda.name,
 };

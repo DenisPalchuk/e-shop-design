@@ -49,6 +49,31 @@ export const lambdaDefinitions = {
     allowEventBridgePublish: true,
     sqsConsumer: true,
   },
+  ordersSqs: {
+    logicalName: "orders-sqs",
+    bundleName: "orders-sqs",
+    handler: "index.sqsHandler",
+    timeout: 30,
+    memorySize: 256,
+    sqsConsumer: true,
+  },
+  inventorySqs: {
+    logicalName: "inventory-sqs",
+    bundleName: "inventory-sqs",
+    handler: "index.sqsHandler",
+    timeout: 30,
+    memorySize: 256,
+    allowEventBridgePublish: true,
+    sqsConsumer: true,
+  },
+  notificationsSqs: {
+    logicalName: "notifications-sqs",
+    bundleName: "notifications-sqs",
+    handler: "index.sqsHandler",
+    timeout: 30,
+    memorySize: 256,
+    sqsConsumer: true,
+  },
 } as const;
 
 export const queueDefinitions = [
@@ -69,6 +94,31 @@ export const queueDefinitions = [
     queueName: "shipments-events",
     detailTypes: ["order.created", "payment.succeeded"],
     lambdaKey: "shipmentsSqs",
+  },
+  {
+    name: "orders-subscription",
+    queueName: "orders-events",
+    detailTypes: ["inventory.confirmed", "inventory.failed", "shipment.created", "shipment.delivered"],
+    lambdaKey: "ordersSqs",
+  },
+  {
+    name: "inventory-subscription",
+    queueName: "inventory-events",
+    detailTypes: ["order.created"],
+    lambdaKey: "inventorySqs",
+  },
+  {
+    name: "notifications-subscription",
+    queueName: "notifications-events",
+    detailTypes: [
+      "order.created",
+      "payment.succeeded",
+      "payment.failed",
+      "shipment.created",
+      "shipment.delivered",
+      "inventory.failed",
+    ],
+    lambdaKey: "notificationsSqs",
   },
 ] as const;
 
